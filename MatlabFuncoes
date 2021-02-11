@@ -1,0 +1,108 @@
+function [ SPaths ] = AssetPaths( S0,mu,sigma,T,NSteps,NRepl )
+%   AssetPaths Aprecamento de opcoes que dependem da trajetória do ativo
+%   Opcao Americana
+SPaths=zeros(NRepl,1+NSteps); %cria a matriz toda com zeros
+SPaths(:,1)=S0; % Em todas as linhas, prim.coluna entra S0. Ex.: 50
+dt=T/NSteps; %Ex.: 60 dias, 30 saltos. dt são dois dias por salto. Tamanho do pulo
+nudt=(mu-0.5*sigma^2)*dt; %prim. parte do MGB
+sidt=sigma*sqrt(dt);
+for i=1:NRepl
+    for j=1:NSteps
+        SPaths(i,j+1)=SPaths(i,j)*exp(nudt+sidt*randn);
+        %valor anterior na coluna vezes o movimento do MGB.
+        %j+1 pq não trabalhamos com a coluna t-zero
+    end
+end
+
+
+
+function [ Price,CI ] = BlsMCCV( S0,k,r,T,sigma,NRepl,NPilot )
+%Técnica de redução de variância usando uma var. y que tenha corr. com x
+% BlsMCCV Black Scholes usando variável de controle que será o preço 
+% da ação
+% NPilot é o n. de observacoes que aprendemos para usar mais a frente na 
+% simulacao de Monte Carlo
+
+nuT=(r-0.5*sigma^2)*T;
+siT=sigma*sqrt(T);
+StockVals=S0*exp(nuT+siT*randn(NPilot,1)); 
+%MGB na fase piloto "aprendizagem". Joga o valor da ação direto para o final.
+OptionVals=exp(-r*T)*max(0,StockVals-k);
+%Traz o prêmio da opção(Preço no final - exercício) a valor presente. 
+MatCov=cov(StockVals,OptionVals);%Matriz de covariância entre a ação e sua opção
+VarY=S0^2*exp(2*r*T)*(exp(T*sigma^2)-1); 
+c=-MatCov(1,2)/VarY; %pela mnimização da var. chegamos nessa fórmula
+ExpY=S0*exp(r*T); %Esperança de Y cresce como um ativo livre de risco.
+NewStockVals=S0*exp(nuT+siT*randn(NRepl,1)); %MGB na fase pós-learning
+NewOptionVals=exp(-r*T)*max(0,NewStockVals-k);
+ControlVars=NewOptionVals + c*(NewStockVals-ExpY); 
+% na média o efeito do 2º termo é zero mas reduz a variância.
+[Price,VarPrice,CI]=normfit(ControlVars)
+end
+
+
+
+
+
+function [Price,CI] = AsianMC( S0,K,r,T,sigma,NSamples,NRepl )
+Payoff=zeros(NRepl,1);
+for i=1: NRepl
+Path=AssetPaths(S0,r,sigma,T,NSamples,1);
+% O 1 do final é o NRepl. Colocamos 1 p/ ele calcular uma linha em cada "i" do for 
+Payoff(i)=max(0,mean(Path(2:(NSamples+1)))-K);
+%Explicado nos adicionais da aula 1. Pega o vetor Path partindo da 2ª pos.
+%Sempre estou trabalhando com Nsteps+1 ou NSamples+1 ...
+end
+[Price,VarPrice,CI]=normfit(exp(-r*T)*Payoff)
+
+End
+
+
+
+clc
+clear
+BlsMC1(50,50,0.1,0.25,0.4,10000) %atenção que é parentese!
+[Price,CI]=BlsMC2(50,50,0.1,0.25,0.4,10000)
+[Price,CI]=BlsMCAV(50,50,0.1,0.25,0.4,10000) %red variancia. Var antitética
+AssetPaths(50,0.1,0.3,1,252,3);
+%Gera 3 séries de 252 passos. Como o valor zero não entra na conta, formamos uma matriz [3x253]
+[Spaths]=AssetPaths(50,0.1,0.3,1,252,3);
+plot(Spaths(1,:))
+plot(Spaths', 'g.-'), grid on  
+%tenho que transpor pois séries são sempre colunas. Meu prog. cria linhas 
+[Price,CI]=AsianMC(50,50,0.1,5/12,0.4,100,50000)
+
+
+
+
+>> BlsMC1(50,50,0.1,0.25,0.4,10000) %atenção que é parentese!
+ans =
+	4.5385
+ 
+>> [Price,CI]=BlsMC2(50,50,0.1,0.25,0.4,10000)
+Price =
+	4.5695
+CI =
+	4.4322
+	4.7067
+ 
+>> [Price,CI]=BlsMCAV(50,50,0.1,0.25,0.4,10000) %red variancia. Var antitética
+Price =
+	4.6395
+CI =
+	4.5662
+	4.7127
+ 
+ 
+ 
+>> AssetPaths(50,0.1,0.3,1,252,3);
+%Gera 3 séries de 252 passos. Como o valor zero não entra na conta, formamos uma matriz [3x253]
+ 
+ 
+>> [Spaths]=AssetPaths(50,0.1,0.3,1,252,3);
+ 
+ >> plot(Spaths(1,:)) %faz o gráfico da 1ª linha da série
+>> plot(Spaths', 'g.-')
+%tenho que transpor pois séries são sempre colunas. Meu prog. cria linhas 
+ 
+>> [Price,CI]=AsianMC(50,50,0.1,5/12,0.4,100,50000)
