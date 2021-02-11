@@ -1,0 +1,276 @@
+Function BlackScholes(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, v As Double) As Double
+'na linha acima foi declarada as variáveis imputadas no modelo BS. Todas são double= nº real, exceto CllPutFlag que é string= texto. O resultado tb será double.
+'S=cotação do ativo / X=preço do exercício / T=tempo para vencimento / r=tx. de juros até o vencimento / v=volatilidade
+    Dim d1 As Double, d2 As Double
+    'Dim significa que as variáveis são resultado de um calculo do programa.
+    d1 = (Log(S / X) + (r + (v ^ 2 / 2)) * T) / (v * Sqr(T))
+    'fórmula BS-> ln=log / sqr=raiz quadrada
+    d2 = d1 - v * Sqr(T)
+    'fórmula BS
+    If CallPutFlag = "c" Then
+    'se for uma call o resultado será dado pela fórmula abaixo
+        BlackScholes = S * WorksheetFunction.NormSDist(d1) - X * Exp(-r * T) * WorksheetFunction.NormSDist(d2)
+        'WorksheetFunction.NormSDist(d1) = distribuição normal / exp(-r * T) = e^(-r*T)
+    Else 'caso contrário
+    BlackScholes = X * Exp(-r * T) * WorksheetFunction.NormSDist(-d2) - S * WorksheetFunction.NormSDist(-d1)
+End If
+End Function
+
+Function BlackScholesG(CallPutFlag As String, S As Double, X As Double, T As Double, b As Double, r As Double, v As Double) As Double
+'b=parâmetro que generaliza o modelo-> b=r-rf opção de moeda / b=r-q opção com dividendos / b=r opção sem dividendos
+    Dim d1 As Double, d2 As Double
+    d1 = (Log(S / X) + (b + (v ^ 2 / 2)) * T) / (v * Sqr(T))
+    d2 = d1 - v * Sqr(T)
+    If CallPutFlag = "c" Then
+        BlackScholesG = S * Exp((b - r) * T) * WorksheetFunction.NormSDist(d1) - X * Exp(-r * T) * WorksheetFunction.NormSDist(d2)
+    Else
+    BlackScholesG = X * Exp(-r * T) * WorksheetFunction.NormSDist(-d2) - S * Exp((b - r) * T) * WorksheetFunction.NormSDist(-d1)
+End If
+End Function
+
+Function MonteCarloStandardOption(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, v As Double, nSteps As Integer, nSimulations As Integer) As Double
+'O método de Monte Carlo tem sido utilizado há bastante tempo como forma de obter aproximações numéricas de funções complexas. Este método tipicamente envolve a geração de observações de alguma distribuição de probabilidades e o uso da amostra obtida para aproximar a função de interesse.
+'integer=nº inteiro / nsteps = movimento horizontal -> MGB dentro das simulações (j)/ nSimulations = movimento vertical (i) quanto maior i, mais confiável o modelo.
+Dim dt, St, Sum, Drift, Vsqrdt As Double 'parâmetos para calcular St
+Dim i, j, z As Integer
+
+dt = T / nSteps
+Drift = (b - (v ^ 2 / 2)) * dt
+Vsqrdt = v * Sqr(dt)
+
+If CallPutFlag = "c" Then 'call=opção de compra, logo se prêmio da opção (St) > que X, quero comprar a X.
+z = 1
+
+ElseIf CallPutFlag = "p" Then 'put=opção de venda, logo se prêmio da opção (St) > que X, não vendo a X.
+z = -1
+
+End If
+ 
+For i = 1 To nSimulations
+St = S 'valor inicial de St que será usado no calculo abaixo
+    For j = 1 To nSteps
+    St = St * Exp(Drift + Vsqrdt * WorksheetFunction.NormInv(Rnd(), 0, 1)) 'premio da opção (MGB).
+    Next 'repete o processo de j=1 até j=nSteps
+    
+    If z * (St - X) > 0 Then Sum = Sum + z * (St - X) 'opção válida / Sum(soma das simulações) = S(médio dos steps)+ retorno.
+    If z * (St - X) <= 0 Then Sum = Sum + 0 'opção vira pó, logo não tem retorno (não realizo).
+Next 'repete o processo de i=1 até i=nSimulations
+
+MonteCarloStandardOption = Exp(-r * T) * (Sum / nSimulations)
+'Exp(-r * T)= fator que trás preço para valor presente / (Sum / nSimulations)= preço médio
+
+   
+    
+End Function
+
+Function MonteCarloMeanReverting(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, v As Double, Kappa As Double, Tetha As Double, nSteps As Long, nSimulations As Long) As Double
+'é usados para preços de opções que revertem a média, como preço de petróleo. Portanto, não é possivel usar MGB. A alternativa será o processo estocástico Ornstein-Ullembeck.
+'long pode comportar valores negativos e positivos, tanto quanto integer, porém maiores.
+
+Dim dt, St, Sum, Vsqrdt As Double 'diferentes dos usados no MGB.
+Dim i, j, z As Integer
+
+dt = T / nSteps
+Vsqrdt = v * Sqr(dt)
+
+If CallPutFlag = "c" Then 'call=opção de compra, logo se prêmio da opção (St) > que X, quero comprar a X.
+z = 1
+ElseIf CallPutFlag = "p" Then 'put=opção de venda, logo se prêmio da opção (St) > que X, não vendo a X.
+z = -1
+End If
+ 
+For i = 1 To nSimulations
+St = S 'valor inicial de St que será usado no calculo abaixo
+    For j = 1 To nSteps
+    St = St + Kappa * (Tetha - St) * dt + Vsqrdt * St * WorksheetFunction.NormInv(Rnd(), 0, 1) 'prêmio da opção
+    'Kappa = velocidade de reversão a média / Tetha = Média
+    Next
+    
+    If z * (St - X) > 0 Then Sum = Sum + z * (St - X) 'opção válida / Sum(soma das simulações) = S(médio dos steps)+ retorno.
+    If z * (St - X) <= 0 Then Sum = Sum + 0 'opção vira pó, logo não tem retorno (não realizo).
+Next
+MonteCarloMeanReverting = Exp(-r * T) * (Sum / nSimulations)
+
+End Function
+
+
+Function CRRBinomial(AmeEurFlag As String, CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, v As Double, N As Integer) As Double
+'modelo de árvore, serve para resolver prêmio de opção de venda americana ( o BS não consegue resolver).
+
+Dim OptionValue() As Double '() permite a analise do preço da opção em cada etapa i
+Dim u As Double, d As Double, a As Double, p As Double
+Dim dt As Double, Df As Double ' dt= delta T / Df=fator que tras a valor presente.
+Dim i As Integer, j As Integer, z As Integer 'i= nº de altas / j= data atual / z= nº steps / n=i
+
+ReDim OptionValue(N + 1) ' Redim redimenciona a matriz.(Dinâmica)/ (N+1) é o número de espaços pra preencher.
+If CallPutFlag = "c" Then
+    z = 1
+ElseIf CallPutFlag = "p" Then
+    z = -1
+End If
+
+dt = T / N
+u = Exp(v * Sqr(dt))
+d = 1 / u
+a = Exp(b * dt)
+p = (a - d) / (u - d)
+Df = Exp(-r * dt)
+
+For i = 0 To N 'resolve verticalmente, de baixo para cima.
+    OptionValue(i) = WorksheetFunction.Max(0, z * (S * u ^ i * d ^ (N - i) - X)) 'compara valor resultante de [z * (S * u ^ i * d ^ (N - i) - X)]com com possibilidade da opção virar pó.
+Next
+
+For j = N - 1 To 0 Step -1: 'resolve horizontalmente, da direita para esquerda / o menos diz que é de tras pra frente / significa que já resolvi o último step.
+    For i = 0 To j
+    
+        If AmeEurFlag = "e" Then ' opção européia
+            OptionValue(i) = (p * OptionValue(i + 1) + (1 - p) * OptionValue(i)) * Df ' valor resultante das ponderações e alta e baixa com probabilidades.
+
+        ElseIf AmeEurFlag = "a" Then 'opção americana
+            OptionValue(i) = WorksheetFunction.Max((z * (S * u ^ i * d ^ (Abs(i - j)) - X)), (p * OptionValue(i + 1) + (1 - p) * OptionValue(i)) * Df) 'compara valor resultante de [z * (S * u ^ i * d ^ (N - i) - X)]com valor resultante das ponderações e alta e baixa com probabilidades.
+
+        End If
+    Next
+Next
+
+CRRBinomial = OptionValue(0)
+
+
+
+End Function
+
+Function ExplicitFiniteDifference(AmeEurFlag As String, CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, v As Double, M As Integer, N As Integer) As Double
+Dim C() As Double, St() As Double
+Dim dt As Double, ds As Double
+Dim pu, pm, pd, Df As Double
+Dim i, j, z As Integer
+Dim SGridPt As Integer
+
+If CallPutFlag = "c" Then
+    z = 1
+    ElseIf CallPutFlag = "p" Then
+    z = -1
+    End If
+    
+ds = S / (M / 2)
+ReDim St(0 To M)
+'dimensiona matriz, o M diz que está pegando valores verticais
+SGridPt = S / ds
+
+ReDim C(0 To N, a To M)
+'de maneira semelhante está dimensionando o tamanho da matriz
+dt = T / N
+Df = 1 / (1 + r * dt)
+
+For i = 0 To M
+    St(i) = i * ds
+    C(N, i) = WorksheetFunction.Max(0, z * (St(i) - X))
+    ' isto diz que o pnt esta na ultima coluna e varia na coluna, faz o primeiro e next vai preenchendo o segundo, até completar coluna
+     Next
+     
+     For j = N - 1 To 0 Step -1
+        For i = 1 To M - 1
+        pu = 0.5 * (v ^ 2 * i ^ 2 + b * i)
+        pm = 1 - (v ^ 2 * i ^ 2 * dt)
+        pd = 0.5 * (v ^ 2 * i ^ 2 - b * i) * dt
+        C(j, i) = Df * (pu * C(j + 1, i + 1) + pm * C(j + 1, i) + pd * C(j + 1, i - 1))
+        'formula para opção européia, para americana usa a formula abaixo
+        
+        If AmeEurFlag = "a" Then
+        C(j, i) = WorksheetFunction.Max(z * (St(i) - X), C(j, i))
+        'C(j,i) é o preço da opção europeia
+        End If
+        Next
+        If z = 1 Then
+        C(j, 0) = 0
+        C(j, M) = St(i) - X
+        'para preencher valores extremos que ainda não foram calculados
+        'PARA CALL
+        Else
+        C(j, 0) = X
+        C(j, M) = 0
+        'PARA PUT
+        End If
+    Next
+    
+    ExplicitFiniteDifference = C(0, SGridPt)
+    'SGridPt indica a posição do valor da opção na data 0
+    
+
+        
+End Function
+
+Function JumpDiffusionMerton(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, v As Double, lambda As Double, gamma As Double) As Double
+Dim delta As Double, Sum As Double
+Dim z As Double, vi As Double
+Dim i As Integer
+
+delta = Sqr(gamma * v ^ 2 / lambda)
+z = Sqr(v ^ 2 - lambda * delta ^ 2)
+Sum = 0
+For i = 0 To 50
+    vi = Sqr(z ^ 2 + delta ^ 2 * (i / T))
+    Sum = Sum + Exp(-lambda * T) * (lambda * T) ^ i / WorksheetFunction.Fact(i) * BlackScholesG(CallPutFlag, S, X, T, r, b, vi)
+    Next
+JumpDiffusionMerton = Sum
+    
+End Function
+
+Function GImpliedVolatilityBisection(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, cm As Double) As Variant 'variant pode ser um numero real(double) ou um texto ( NA)
+Dim vLow As Double, vHigh As Double, vi As Double 'resultado final
+Dim cLow As Double, cHigh As Double, epsilon As Double 'premio da opção
+Dim counter As Integer
+vLow = 0.005
+vHigh = 4
+epsilon = 0.00000001 'erro aceitável
+cLow = BlackScholesG(CallPutFlag, S, X, T, r, b, vLow)
+cHigh = BlackScholesG(CallPutFlag, S, X, T, r, b, vHigh)
+counter = 0
+
+vi = vLow + (cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
+While Abs(cm - BlackScholesG(CallPutFlag, S, X, T, r, b, vi)) > epsilon 'enquanto diferença entre 1,53 e o resultado do BS for maior que o erro aceitável não saio do looping.
+    counter = counter + 1
+    If counter = 100 Then 'se em 100 passos não conseguir resolver, então o programa desiste
+       GImpliedVolatilityBisection = "NA"
+       Exit Function
+    End If
+    If BlackScholesG(CallPutFlag, S, X, T, r, b, vi) < cm Then
+        vLow = vi 'novo limite inferior, pois sei que não vai ser menor que vi.
+    Else
+        vHigh = vi ' o mesmo vale para o limite superior
+    End If
+    
+    cLow = BlackScholesG(CallPutFlag, S, X, T, r, b, vLow)
+    cHigh = BlackScholesG(CallPutFlag, S, X, T, r, b, vHigh)
+    vi = vLow + (cm - cLow) * (vHigh - vLow) / (cHigh - cLow)
+    Wend
+    
+GImpliedVolatilityBisection = vi
+  
+'programa serve para extrair volatilidade usada pelo mercado
+
+
+End Function
+
+Function SkewKurtCorradoSuModified(CallPutFlag As String, S As Double, X As Double, T As Double, r As Double, b As Double, v As Double, Skew As Double, Kurt As Double) As Double
+Dim Q3 As Double, Q4 As Double
+Dim d As Double, w As Double
+Dim CallValue As Double
+
+w = Skew / 6 * v ^ 3 * T ^ 3 / 2 + Kurt / 24 * v ^ 4 * T ^ 2
+d = (Log(S / X) + (b + v ^ 2 / 2) * T - Log(1 + w)) / (v * Sqr(T))
+Q3 = 1 / (6 * (1 + w)) * S * v * Sqr(T) * (2 * v * Sqr(T) - d) * WorksheetFunction.NormSDist(d)
+Q4 = 1 / (24 * (1 + w)) * S * v * Sqr(T) * (d ^ 2 - 3 * d * v * Sqr(T) + 3 * v ^ 2 * T - 1) * WorksheetFunction.NormSDist(d)
+
+CallValue = BlackScholesG("c", S, X, T, r, b, v) + Skew * Q3 + (Kurt - 3) * Q4
+
+If CallPutFlag = "c" Then
+    SkewKurtCorradoSuModified = CallValue
+Else
+    SkewKurtCorradoSuModified = CallValue - S * Exp((b - r) * T) + X * Exp(-r * T)
+End If
+
+
+End Function
+
+
